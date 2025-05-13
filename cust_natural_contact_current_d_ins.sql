@@ -1,0 +1,77 @@
+
+
+WITH ins_npcon_tmp AS (
+--自然人集團客戶通訊資料
+SELECT
+    CAST(CASE
+        WHEN SUBSTRING(DA501.CUSTOMER_ID,1,2) RLIKE '[A-Z][1-2]'
+        THEN 1
+        WHEN SUBSTRING(DA501.CUSTOMER_ID,1,2) RLIKE '[A-Z][8-9]'
+        THEN 2
+        WHEN SUBSTRING(DA501.CUSTOMER_ID,1,2) RLIKE '[A-Z][A-Z]'
+        THEN 2
+        ELSE 3
+    END AS STRING) AS ID_TYPE, --主證號 / ID類型
+    CAST(DA501.CUSTOMER_ID AS STRING) AS ID_NO, --自然人證照號碼
+    'INS' AS SOURCE, --來源子公司別
+    CAST(DA501.OCR_COUNTRY_CODE AS STRING) AS COUNTRY, --國籍
+    CAST(COMM.CONTACT_TYPE AS STRING) AS CONTACT_TYPE,
+    CAST(COMM.CONTENT AS STRING) AS CONTENT,
+    CAST(1 AS STRING) AS STATUS,
+    CAST(CURRENT_DATE() AS TIMESTAMP_NTZ) AS LAST_MODIFIED_DATE,
+    CAST('2024-08-16' AS TIMESTAMP_NTZ) AS CREATE_DATE,--這裡要改成首次建立的日期
+    CASE
+        WHEN SUBSTRING(DA501.BIRTHDAY,4,1) RLIKE '[0-9]' THEN SUBSTRING(DA501.BIRTHDAY,4,1)
+        ELSE 0
+    END AS PTN --待確認PTN是否保留
+FROM (SELECT * FROM raw_clean.ins.DTATA501 WHERE DATE_FORMAT(DBC_BUSINESS_DATE, 'yyyy-MM-dd') = '$business_date' ) AS DA501
+--------居住地址、通訊地址、家用電話、公司電話、手機號碼、電子郵件--------
+INNER JOIN (
+SELECT DISTINCT ID, CONTACT_TYPE, CONTENT FROM(
+        -- 通訊地址 (CONTACT_TYPE = 1)
+        SELECT CUSTOMER_ID AS ID, '1' AS CONTACT_TYPE, ADDRESS AS CONTENT
+        FROM raw_clean.ins.DTABP005
+        WHERE ADDRESS_KIND = '3'
+        AND ADDRESS <> ''
+        AND ADDRESS IS NOT NULL
+        AND DATE_FORMAT(DBC_BUSINESS_DATE, 'yyyy-MM-dd') = '$business_date'
+        UNION ALL
+        -- 聯絡地址 (CONTACT_TYPE = 2)
+        SELECT CUSTOMER_ID AS ID, '2' AS CONTACT_TYPE, ADDRESS AS CONTENT
+        FROM raw_clean.ins.DTABP005
+        WHERE ADDRESS_KIND = '2'
+        AND ADDRESS <> ''
+        AND ADDRESS IS NOT NULL
+        AND DATE_FORMAT(DBC_BUSINESS_DATE, 'yyyy-MM-dd') = '$business_date'
+        UNION ALL
+        -- 電話1 (CONTACT_TYPE = 3)
+        SELECT CUSTOMER_ID AS ID, '3' AS CONTACT_TYPE, PHONE1 AS CONTENT
+        FROM raw_clean.ins.DTABP005
+        WHERE PHONE1 <> ''
+        AND PHONE1 IS NOT NULL
+        AND DATE_FORMAT(DBC_BUSINESS_DATE, 'yyyy-MM-dd') = '$business_date'
+        UNION ALL
+        -- 電話2 (CONTACT_TYPE = 4)
+        SELECT CUSTOMER_ID AS ID, '4' AS CONTACT_TYPE, PHONE2 AS CONTENT
+        FROM raw_clean.ins.DTABP005
+        WHERE PHONE2 <> ''
+        AND PHONE2 IS NOT NULL
+        AND DATE_FORMAT(DBC_BUSINESS_DATE, 'yyyy-MM-dd') = '$business_date'
+        UNION ALL
+        -- 手機 (CONTACT_TYPE = 5)
+        SELECT CUSTOMER_ID AS ID, '5' AS CONTACT_TYPE, CELLULAR_PHONE AS CONTENT
+        FROM raw_clean.ins.DTATA501
+        WHERE CELLULAR_PHONE <> ''
+        AND CELLULAR_PHONE IS NOT NULL
+        AND DATE_FORMAT(DBC_BUSINESS_DATE, 'yyyy-MM-dd') = '$business_date'
+        UNION ALL
+        -- 電子郵件 (CONTACT_TYPE = 6)
+        SELECT CUSTOMER_ID AS ID, '6' AS CONTACT_TYPE, EMAIL AS CONTENT
+        FROM raw_clean.ins.DTATA501
+        WHERE EMAIL <> ''
+        AND EMAIL IS NOT NULL
+        AND DATE_FORMAT(DBC_BUSINESS_DATE, 'yyyy-MM-dd') = '$business_date'
+    ) a 
+) COMM
+ON DA501.CUSTOMER_ID = COMM.ID
+)
